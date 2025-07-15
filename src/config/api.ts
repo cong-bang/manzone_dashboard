@@ -1,6 +1,6 @@
 // API Configuration
 export const API_CONFIG = {
-  BASE_URL: 'http://localhost:3001', // Change this to actual server URL later
+  BASE_URL: 'https://manzone.wizlab.io.vn', // Change this to actual server URL later
   ENDPOINTS: {
     AUTH: {
       LOGIN: '/auth/login',
