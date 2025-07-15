@@ -387,7 +387,7 @@ const UsersManagement = () => {
               title={`${record.active ? "Deactivate" : "Activate"} user`}
             />
           )}
-          {/* {!record.deleted && (
+          {!record.deleted && (
             <Button
               type="text"
               icon={<LockOutlined />}
@@ -395,7 +395,7 @@ const UsersManagement = () => {
               size="small"
               title="Reset password"
             />
-          )} */}
+          )}
         </Space>
       ),
     },

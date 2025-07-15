@@ -63,6 +63,7 @@ interface UserProfileResponse {
 
 const fetchUserProfile = async (token: string) => {
   try {
+    console.log('Fetching user profile from API...');
     const response = await axios.get<UserProfileResponse>(`${API_BASE_URL}/users/profile`, {
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -70,8 +71,12 @@ const fetchUserProfile = async (token: string) => {
       }
     });
 
+    console.log('API Response received:', response.status);
+
     if (response.data.success && response.data.data) {
       const userData = response.data.data;
+      console.log('User profile fetched successfully:', userData.email);
+      
       return {
         id: userData.id.toString(),
         email: userData.email,
@@ -84,16 +89,27 @@ const fetchUserProfile = async (token: string) => {
       };
     }
     
-    throw new Error('Failed to fetch user profile');
+    throw new Error('Failed to fetch user profile - invalid response structure');
   } catch (error) {
+    console.error('Profile fetch error details:', error);
+    
     if (axios.isAxiosError(error)) {
       if (error.response?.status === 401) {
+        console.error('Unauthorized - token may be invalid');
         throw new Error('UNAUTHORIZED');
       }
       if (error.response?.status === 403) {
+        console.error('Forbidden - insufficient permissions');
         throw new Error('FORBIDDEN');
       }
+      if (error.code === 'ERR_NETWORK') {
+        console.error('Network error occurred');
+        throw new Error('NETWORK_ERROR');
+      }
+      
+      console.error('API Error Response:', error.response?.data);
     }
+    
     throw new Error('PROFILE_FETCH_FAILED');
   }
 };
@@ -117,42 +133,49 @@ export const authService = {
           throw new Error('INSUFFICIENT_PERMISSIONS');
         }
 
-        // Fetch real user profile data
-        try {
-          const userProfile = await fetchUserProfile(token);
-          
-          return {
-            success: true,
-            token,
-            user: userProfile
-          };
-        } catch (profileError: any) {
-          // If profile fetch fails, fall back to JWT data
-          console.warn('Failed to fetch user profile, using JWT data:', profileError.message);
-          
-          return {
-            success: true,
-            token,
-            user: {
-              id: decodedToken.sub,
-              email: decodedToken.email,
-              name: 'Admin User', // Fallback name
-              role: decodedToken.scope.toLowerCase(),
-              avatar: 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg?auto=compress&cs=tinysrgb&w=150&h=150&dpr=1'
-            }
-          };
-        }
+        // Return success with token - profile will be fetched separately
+        return {
+          success: true,
+          token,
+          user: {
+            id: decodedToken.sub,
+            email: decodedToken.email,
+            name: 'Loading...', // Temporary until profile loads
+            role: decodedToken.scope.toLowerCase(),
+            avatar: undefined,
+            phoneNumber: undefined,
+            address: undefined,
+            active: true
+          }
+        };
       }
       
       throw new Error('LOGIN_FAILED');
     } catch (error: any) {
+      console.error('Login error:', error);
+      
       if (error.message === 'INSUFFICIENT_PERMISSIONS') {
         throw error;
+      }
+      
+      if (error.message === 'UNAUTHORIZED') {
+        throw new Error('INVALID_CREDENTIALS');
+      }
+      
+      if (error.message === 'FORBIDDEN') {
+        throw new Error('INSUFFICIENT_PERMISSIONS');
+      }
+      
+      if (error.message === 'NETWORK_ERROR') {
+        throw new Error('NETWORK_ERROR');
       }
       
       if (axios.isAxiosError(error)) {
         if (error.response?.status === 401) {
           throw new Error('INVALID_CREDENTIALS');
+        }
+        if (error.response?.status === 403) {
+          throw new Error('INSUFFICIENT_PERMISSIONS');
         }
         throw new Error('NETWORK_ERROR');
       }
@@ -181,15 +204,17 @@ export const authService = {
         const userProfile = await fetchUserProfile(token);
         return userProfile;
       } catch (profileError) {
-        // If profile fetch fails, fall back to JWT data
-        console.warn('Failed to fetch user profile during token validation, using JWT data');
-        
+        console.warn('Profile fetch failed during token validation, using JWT data');
+        // Return basic data from JWT if profile fetch fails
         return {
           id: decodedToken.sub,
           email: decodedToken.email,
-          name: 'Admin User', // Fallback name
+          name: 'Admin User',
           role: decodedToken.scope.toLowerCase(),
-          avatar: 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg?auto=compress&cs=tinysrgb&w=150&h=150&dpr=1'
+          avatar: undefined,
+          phoneNumber: undefined,
+          address: undefined,
+          active: true
         };
       }
     } catch (error) {
@@ -205,5 +230,22 @@ export const authService = {
 
   getUserProfile: async (token: string) => {
     return await fetchUserProfile(token);
+  },
+
+  // Method to refresh current user profile
+  refreshUserProfile: async () => {
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    if (!token) {
+      throw new Error('No authentication token found');
+    }
+    
+    try {
+      const userProfile = await fetchUserProfile(token);
+      console.log('Profile refreshed successfully');
+      return userProfile;
+    } catch (error) {
+      console.error('Failed to refresh user profile:', error);
+      throw error;
+    }
   }
 };

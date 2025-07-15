@@ -1,0 +1,25 @@
+// API Configuration
+export const API_CONFIG = {
+  BASE_URL: 'http://localhost:3001', // Change this to actual server URL later
+  ENDPOINTS: {
+    AUTH: {
+      LOGIN: '/auth/login',
+      PROFILE: '/users/profile'
+    },
+    ADMIN: {
+      USERS: '/admin/users',
+      USERS_TEST: '/admin/users/test',
+      USER_STATISTICS: '/admin/users/statistics'
+    }
+  }
+};
+
+// Helper function to build full API URLs
+export const buildApiUrl = (endpoint: string): string => {
+  return `${API_CONFIG.BASE_URL}${endpoint}`;
+};
+
+// Helper function to update base URL (for when you change to actual server)
+export const updateBaseUrl = (newBaseUrl: string): void => {
+  API_CONFIG.BASE_URL = newBaseUrl;
+};
