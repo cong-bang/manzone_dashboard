@@ -1,10 +1,15 @@
-import React, { useState } from 'react';
-import { Form, Input, Button, Card, Checkbox, Divider, message } from 'antd';
-import { UserOutlined, LockOutlined, EyeInvisibleOutlined, EyeTwoTone } from '@ant-design/icons';
-import { useAuth } from '../../contexts/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useState } from "react";
+import { Form, Input, Button, Card, Checkbox, Divider, message } from "antd";
+import {
+  UserOutlined,
+  LockOutlined,
+  EyeInvisibleOutlined,
+  EyeTwoTone,
+} from "@ant-design/icons";
+import { useAuth } from "../../contexts/AuthContext";
+import { useNavigate } from "react-router-dom";
 
-const Login: React.FC = () => {
+const Login = () => {
   const [loading, setLoading] = useState(false);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const { login } = useAuth();
@@ -15,25 +20,24 @@ const Login: React.FC = () => {
     try {
       const success = await login(values);
       if (success) {
-        navigate('/dashboard');
-      } else {
-        message.error('Invalid email or password');
+        navigate("/dashboard");
       }
     } catch (error) {
-      message.error('Login failed. Please try again.');
+      // Error handling is done in AuthContext
+      console.error("Login error:", error);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleForgotPassword = async (values: any) => {
+  const handleForgotPassword = async (_values: any) => {
     setLoading(true);
     try {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      message.success('Password reset email sent! Check your inbox.');
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      message.success("Password reset email sent! Check your inbox.");
       setShowForgotPassword(false);
     } catch (error) {
-      message.error('Failed to send reset email. Please try again.');
+      message.error("Failed to send reset email. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -47,8 +51,12 @@ const Login: React.FC = () => {
             <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-500 rounded-full mb-4">
               <UserOutlined className="text-white text-2xl" />
             </div>
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">ManZone Admin</h1>
-            <p className="text-gray-600">Welcome back! Please sign in to your account</p>
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">
+              ManZone Admin
+            </h1>
+            <p className="text-gray-600">
+              Welcome back! Please sign in to your account
+            </p>
           </div>
 
           {!showForgotPassword ? (
@@ -62,8 +70,8 @@ const Login: React.FC = () => {
               <Form.Item
                 name="email"
                 rules={[
-                  { required: true, message: 'Please input your email!' },
-                  { type: 'email', message: 'Please enter a valid email!' }
+                  { required: true, message: "Please input your email!" },
+                  { type: "email", message: "Please enter a valid email!" },
                 ]}
               >
                 <Input
@@ -75,13 +83,17 @@ const Login: React.FC = () => {
 
               <Form.Item
                 name="password"
-                rules={[{ required: true, message: 'Please input your password!' }]}
+                rules={[
+                  { required: true, message: "Please input your password!" },
+                ]}
               >
                 <Input.Password
                   prefix={<LockOutlined className="text-gray-400" />}
                   placeholder="Password"
                   className="rounded-lg"
-                  iconRender={(visible) => visible ? <EyeTwoTone /> : <EyeInvisibleOutlined />}
+                  iconRender={(visible: boolean) =>
+                    visible ? <EyeTwoTone /> : <EyeInvisibleOutlined />
+                  }
                 />
               </Form.Item>
 
@@ -115,10 +127,10 @@ const Login: React.FC = () => {
 
               <div className="bg-gray-50 rounded-lg p-4 text-center">
                 <p className="text-sm text-gray-600 mb-2">
-                  <strong>Email:</strong> admin@manzone.com
+                  <strong>Email:</strong> admin
                 </p>
                 <p className="text-sm text-gray-600">
-                  <strong>Password:</strong> admin123
+                  <strong>Password:</strong> admin
                 </p>
               </div>
             </Form>
@@ -130,15 +142,19 @@ const Login: React.FC = () => {
               size="large"
             >
               <div className="text-center mb-6">
-                <h2 className="text-xl font-semibold text-gray-900 mb-2">Forgot Password?</h2>
-                <p className="text-gray-600">Enter your email to reset your password</p>
+                <h2 className="text-xl font-semibold text-gray-900 mb-2">
+                  Forgot Password?
+                </h2>
+                <p className="text-gray-600">
+                  Enter your email to reset your password
+                </p>
               </div>
 
               <Form.Item
                 name="email"
                 rules={[
-                  { required: true, message: 'Please input your email!' },
-                  { type: 'email', message: 'Please enter a valid email!' }
+                  { required: true, message: "Please input your email!" },
+                  { type: "email", message: "Please enter a valid email!" },
                 ]}
               >
                 <Input
