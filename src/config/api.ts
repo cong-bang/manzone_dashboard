@@ -9,7 +9,9 @@ export const API_CONFIG = {
     ADMIN: {
       USERS: '/admin/users',
       USERS_TEST: '/admin/users/test',
-      USER_STATISTICS: '/admin/users/statistics'
+      USER_STATISTICS: '/admin/users/statistics',
+      CATEGORIES: '/categories',
+      CATEGORIES_TEST: '/categories/test'
     }
   }
 };

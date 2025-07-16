@@ -6,36 +6,17 @@ import {
   Input, 
   Modal, 
   Form, 
-  Select,
   Space,
   Popconfirm,
-  Switch,
-  Row,
-  Col,
-  InputNumber,
-  Tag
 } from 'antd';
 import { 
   PlusOutlined, 
   EditOutlined, 
   DeleteOutlined,
-  FolderOutlined,
-  TagOutlined,
   SearchOutlined
 } from '@ant-design/icons';
-import { apiService } from '../../services/apiService';
+import { adminCategoryService, Category, CategoryListParams } from '../../services/adminCategoryService';
 import { useNotification } from '../../contexts/NotificationContext';
-
-const { Option } = Select;
-
-interface Category {
-  id: string;
-  name: string;
-  parent: string | null;
-  status: 'active' | 'inactive';
-  order: number;
-  parentName?: string;
-}
 
 const CategoriesManagement: React.FC = () => {
   const [categories, setCategories] = useState<Category[]>([]);
@@ -43,28 +24,28 @@ const CategoriesManagement: React.FC = () => {
   const [modalVisible, setModalVisible] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [searchText, setSearchText] = useState('');
+  const [pagination, setPagination] = useState({ current: 1, pageSize: 3, total: 0 });
   const [form] = Form.useForm();
   const { showNotification } = useNotification();
 
   useEffect(() => {
     fetchCategories();
-  }, []);
+  }, [pagination.current, pagination.pageSize]);
 
   const fetchCategories = async () => {
     setLoading(true);
     try {
-      const response = await apiService.categories.getAll();
-      
-      // Add parent name to categories for display
-      const categoriesWithParentName = response.map((category: Category) => {
-        const parent = response.find((cat: Category) => cat.id === category.parent);
-        return {
-          ...category,
-          parentName: parent ? parent.name : null
-        };
+      const params: CategoryListParams = {
+        page: pagination.current,
+        size: pagination.pageSize,
+        searchString: searchText || undefined,
+      };
+      const response = await adminCategoryService.getAllCategories(params);
+      setCategories(response.data.content);
+      setPagination({
+        ...pagination,
+        total: response.data.totalElements,
       });
-      
-      setCategories(categoriesWithParentName);
     } catch (error) {
       showNotification('error', 'Failed to fetch categories');
     } finally {
@@ -81,12 +62,15 @@ const CategoriesManagement: React.FC = () => {
   const handleEdit = (category: Category) => {
     setEditingCategory(category);
     setModalVisible(true);
-    form.setFieldsValue(category);
+    form.setFieldsValue({
+      name: category.name,
+      description: category.description,
+    });
   };
 
-  const handleDelete = async (categoryId: string) => {
+  const handleDelete = async (categoryId: number) => {
     try {
-      await apiService.categories.delete(categoryId);
+      await adminCategoryService.deleteCategory(categoryId);
       showNotification('success', 'Category deleted successfully');
       fetchCategories();
     } catch (error) {
@@ -94,25 +78,13 @@ const CategoriesManagement: React.FC = () => {
     }
   };
 
-  const handleStatusToggle = async (categoryId: string, checked: boolean) => {
-    try {
-      await apiService.categories.update(categoryId, { 
-        status: checked ? 'active' : 'inactive' 
-      });
-      showNotification('success', 'Category status updated');
-      fetchCategories();
-    } catch (error) {
-      showNotification('error', 'Failed to update category status');
-    }
-  };
-
-  const handleSubmit = async (values: any) => {
+  const handleSubmit = async (values: { name: string; description?: string }) => {
     try {
       if (editingCategory) {
-        await apiService.categories.update(editingCategory.id, values);
+        await adminCategoryService.updateCategory(editingCategory.id, values);
         showNotification('success', 'Category updated successfully');
       } else {
-        await apiService.categories.create(values);
+        await adminCategoryService.createCategory(values);
         showNotification('success', 'Category created successfully');
       }
       setModalVisible(false);
@@ -122,8 +94,12 @@ const CategoriesManagement: React.FC = () => {
     }
   };
 
-  const getParentCategories = () => {
-    return categories.filter(cat => cat.parent === null);
+  const handleTableChange = (newPagination: any) => {
+    setPagination({
+      ...pagination,
+      current: newPagination.current,
+      pageSize: newPagination.pageSize,
+    });
   };
 
   const filteredCategories = categories.filter(category =>
@@ -135,44 +111,29 @@ const CategoriesManagement: React.FC = () => {
       title: 'Name',
       dataIndex: 'name',
       key: 'name',
-      render: (name: string, record: Category) => (
-        <div className="flex items-center space-x-2">
-          {record.parent ? <TagOutlined /> : <FolderOutlined />}
-          <span>{name}</span>
-        </div>
-      ),
     },
     {
-      title: 'Parent Category',
-      dataIndex: 'parentName',
-      key: 'parentName',
-      render: (parentName: string) => (
-        parentName ? <Tag color="blue">{parentName}</Tag> : <span className="text-gray-400">Root Category</span>
-      ),
+      title: 'Description',
+      dataIndex: 'description',
+      key: 'description',
+      render: (description: string) => description || <span className="text-gray-400">No description</span>,
     },
     {
-      title: 'Status',
-      dataIndex: 'status',
-      key: 'status',
-      render: (status: string, record: Category) => (
-        <Switch
-          checked={status === 'active'}
-          onChange={(checked) => handleStatusToggle(record.id, checked)}
-          checkedChildren="Active"
-          unCheckedChildren="Inactive"
-        />
-      ),
+      title: 'Created At',
+      dataIndex: 'createdAt',
+      key: 'createdAt',
+      render: (createdAt: string) => new Date(createdAt).toLocaleString(),
     },
     {
-      title: 'Order',
-      dataIndex: 'order',
-      key: 'order',
-      sorter: (a: Category, b: Category) => a.order - b.order,
+      title: 'Updated At',
+      dataIndex: 'updatedAt',
+      key: 'updatedAt',
+      render: (updatedAt: string) => new Date(updatedAt).toLocaleString(),
     },
     {
       title: 'Actions',
       key: 'actions',
-      render: (_, record: Category) => (
+      render: (_: any, record: Category) => (
         <Space>
           <Button 
             type="primary" 
@@ -218,7 +179,7 @@ const CategoriesManagement: React.FC = () => {
 
         <div className="mb-4">
           <Input.Search
-            placeholder="Search categories..."
+            placeholder="Search name categories..."
             allowClear
             onSearch={setSearchText}
             onChange={(e) => setSearchText(e.target.value)}
@@ -233,10 +194,14 @@ const CategoriesManagement: React.FC = () => {
           rowKey="id"
           loading={loading}
           pagination={{
+            current: pagination.current,
+            pageSize: pagination.pageSize,
+            total: pagination.total,
             showSizeChanger: true,
             showQuickJumper: true,
             showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} categories`,
           }}
+          onChange={handleTableChange}
         />
       </Card>
 
@@ -251,7 +216,6 @@ const CategoriesManagement: React.FC = () => {
           form={form}
           layout="vertical"
           onFinish={handleSubmit}
-          initialValues={{ status: 'active', order: 1 }}
         >
           <Form.Item
             name="name"
@@ -262,46 +226,11 @@ const CategoriesManagement: React.FC = () => {
           </Form.Item>
           
           <Form.Item
-            name="parent"
-            label="Parent Category"
-            help="Leave empty for root category"
+            name="description"
+            label="Description"
           >
-            <Select placeholder="Select parent category" allowClear>
-              {getParentCategories().map(category => (
-                <Option key={category.id} value={category.id}>
-                  {category.name}
-                </Option>
-              ))}
-            </Select>
+            <Input.TextArea placeholder="Enter category description" rows={4} />
           </Form.Item>
-          
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item
-                name="status"
-                label="Status"
-                rules={[{ required: true, message: 'Please select a status!' }]}
-              >
-                <Select placeholder="Select status">
-                  <Option value="active">Active</Option>
-                  <Option value="inactive">Inactive</Option>
-                </Select>
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item
-                name="order"
-                label="Sort Order"
-                rules={[{ required: true, message: 'Please input the sort order!' }]}
-              >
-                <InputNumber
-                  min={1}
-                  placeholder="1"
-                  style={{ width: '100%' }}
-                />
-              </Form.Item>
-            </Col>
-          </Row>
           
           <div className="flex justify-end space-x-2">
             <Button onClick={() => setModalVisible(false)}>
