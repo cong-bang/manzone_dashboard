@@ -14,75 +14,121 @@ import {
   Tag,
   Upload,
   InputNumber,
-  Switch,
   Row,
   Col,
-  Checkbox,
-  Divider
+  Divider,
+  Spin,
+  Alert
 } from 'antd';
 import { 
   PlusOutlined, 
   EditOutlined, 
   DeleteOutlined, 
   SearchOutlined,
-  UploadOutlined,
   EyeOutlined,
   ExportOutlined,
   ImportOutlined,
-  MoreOutlined
+  ReloadOutlined
 } from '@ant-design/icons';
-import { apiService } from '../../services/apiService';
+import { adminProductService, Product, CreateProductRequest, UpdateProductRequest, ProductListParams } from '../../services/adminProductService';
+import { adminCategoryService, Category } from '../../services/adminCategoryService';
 import { useNotification } from '../../contexts/NotificationContext';
 
 const { Option } = Select;
 const { TextArea } = Input;
 
 const ProductsManagement: React.FC = () => {
-  const [products, setProducts] = useState([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(false);
+  const [categoriesLoading, setCategoriesLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [detailModalVisible, setDetailModalVisible] = useState(false);
-  const [editingProduct, setEditingProduct] = useState(null);
-  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [searchText, setSearchText] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([]);
+  const [categoryFilter, setCategoryFilter] = useState<number | 'all'>('all');
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [pagination, setPagination] = useState({
     current: 1,
-    pageSize: 10,
+    pageSize: 5,
     total: 0
   });
   const [form] = Form.useForm();
-  const [fileList, setFileList] = useState([]);
+  const [fileList, setFileList] = useState<any[]>([]);
   const { showNotification } = useNotification();
-
-  const categories = [
-    'Watches', 'Wallets', 'Belts', 'Sunglasses', 'Ties', 'Cufflinks', 'Rings', 'Bracelets'
-  ];
-
-  const colors = ['Black', 'Brown', 'Blue', 'Red', 'Green', 'Gray', 'White', 'Silver', 'Gold'];
-  const materials = ['Leather', 'Metal', 'Fabric', 'Plastic', 'Wood', 'Ceramic', 'Titanium'];
-  const sizes = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'One Size'];
 
   useEffect(() => {
     fetchProducts();
-  }, [pagination.current, pagination.pageSize, searchText, categoryFilter, statusFilter]);
+    fetchCategories();
+  }, [pagination.current, pagination.pageSize, searchText, categoryFilter]);
 
   const fetchProducts = async () => {
     setLoading(true);
     try {
-      const response = await apiService.products.getAll(
-        pagination.current,
-        pagination.pageSize,
-        searchText
-      );
-      setProducts(response.data);
-      setPagination(prev => ({ ...prev, total: response.total }));
+      const params: ProductListParams = {
+        page: pagination.current - 1,
+        size: pagination.pageSize,
+        sortBy: 'CREATED_AT',
+        sortDir: 'DESC'
+      };
+
+      if (searchText) {
+        params.searchString = searchText;
+      }
+
+      if (categoryFilter !== 'all') {
+        params.categoryId = categoryFilter as number;
+      }
+
+      const response = await adminProductService.getAllProducts(params);
+      
+      if (response.success) {
+        setProducts(response.data.content);
+        setPagination(prev => ({ 
+          ...prev, 
+          total: response.data.totalElements 
+        }));
+      } else {
+        showNotification('error', response.message || 'Failed to fetch products');
+      }
     } catch (error) {
-      showNotification('error', 'Failed to fetch products');
+      console.error('Error fetching products:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to fetch products';
+      
+      if (errorMessage.includes('UNAUTHORIZED')) {
+        showNotification('error', 'Please login again');
+        // Redirect to login or refresh token
+      } else if (errorMessage.includes('ACCESS_DENIED')) {
+        showNotification('error', 'You do not have permission to access this resource');
+      } else {
+        showNotification('error', errorMessage);
+      }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchCategories = async () => {
+    setCategoriesLoading(true);
+    try {
+      const response = await adminCategoryService.getAllCategories({
+        page: 0,
+        size: 10,
+        sortBy: 'NAME',
+        sortDir: 'ASC'
+      });
+      
+      if (response.success) {
+        setCategories(response.data.content);
+      } else {
+        showNotification('error', response.message || 'Failed to fetch categories');
+      }
+    } catch (error) {
+      console.error('Error fetching categories:', error);
+      showNotification('error', 'Failed to fetch categories');
+    } finally {
+      setCategoriesLoading(false);
     }
   };
 
@@ -98,66 +144,128 @@ const ProductsManagement: React.FC = () => {
     setFileList([]);
   };
 
-  const handleEdit = (product: any) => {
+  const handleEdit = (product: Product) => {
     setEditingProduct(product);
     setModalVisible(true);
     form.setFieldsValue({
-      ...product,
-      images: product.images || []
+      name: product.name,
+      description: product.description,
+      price: product.price,
+      categoryId: product.categoryId
     });
-    setFileList(product.images?.map((url: string, index: number) => ({
+    
+    // Convert imageUrls to file list for Upload component
+    const imageFiles = product.imageUrls?.map((url: string, index: number) => ({
       uid: String(index),
       name: `image_${index}`,
       status: 'done',
       url: url
-    })) || []);
+    })) || [];
+    
+    setFileList(imageFiles);
   };
 
-  const handleDelete = async (productId: string) => {
+  const handleDelete = async (productId: number) => {
     try {
-      await apiService.products.delete(productId);
-      showNotification('success', 'Product deleted successfully');
-      fetchProducts();
+      const response = await adminProductService.deleteProduct(productId);
+      
+      if (response.success) {
+        showNotification('success', 'Product deleted successfully');
+        fetchProducts();
+      } else {
+        showNotification('error', response.message || 'Failed to delete product');
+      }
     } catch (error) {
-      showNotification('error', 'Failed to delete product');
+      console.error('Error deleting product:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to delete product';
+      
+      if (errorMessage.includes('PRODUCT_NOT_FOUND')) {
+        showNotification('error', 'Product not found');
+      } else if (errorMessage.includes('CANNOT_DELETE_PRODUCT')) {
+        showNotification('error', 'Cannot delete this product. It may be referenced by other records.');
+      } else {
+        showNotification('error', errorMessage);
+      }
     }
   };
 
   const handleBulkDelete = async () => {
     try {
-      await apiService.products.bulkDelete(selectedRowKeys);
+      const deletePromises = selectedRowKeys.map(id => 
+        adminProductService.deleteProduct(Number(id))
+      );
+      
+      await Promise.all(deletePromises);
+      
       showNotification('success', `${selectedRowKeys.length} products deleted successfully`);
       setSelectedRowKeys([]);
       fetchProducts();
     } catch (error) {
-      showNotification('error', 'Failed to delete products');
+      console.error('Error in bulk delete:', error);
+      showNotification('error', 'Failed to delete some products');
     }
   };
 
   const handleSubmit = async (values: any) => {
     try {
+      // Extract image URLs from fileList
+      const imageUrls = fileList
+        .filter(file => file.status === 'done')
+        .map(file => file.url || file.response?.url)
+        .filter(url => url);
+
       const productData = {
-        ...values,
-        images: fileList.map(file => file.url || file.response?.url || file.thumbUrl)
+        name: values.name,
+        description: values.description || '',
+        price: values.price,
+        categoryId: values.categoryId,
+        imageUrls: imageUrls
       };
 
+      let response;
       if (editingProduct) {
-        await apiService.products.update(editingProduct.id, productData);
-        showNotification('success', 'Product updated successfully');
+        response = await adminProductService.updateProduct(editingProduct.id, productData as UpdateProductRequest);
       } else {
-        await apiService.products.create(productData);
-        showNotification('success', 'Product created successfully');
+        response = await adminProductService.createProduct(productData as CreateProductRequest);
       }
-      setModalVisible(false);
-      fetchProducts();
+
+      if (response.success) {
+        showNotification('success', editingProduct ? 'Product updated successfully' : 'Product created successfully');
+        setModalVisible(false);
+        fetchProducts();
+      } else {
+        showNotification('error', response.message || 'Failed to save product');
+      }
     } catch (error) {
-      showNotification('error', 'Failed to save product');
+      console.error('Error saving product:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to save product';
+      
+      if (errorMessage.includes('PRODUCT_NAME_ALREADY_EXISTS')) {
+        showNotification('error', 'A product with this name already exists');
+      } else if (errorMessage.includes('INVALID_PRICE')) {
+        showNotification('error', 'Please enter a valid price');
+      } else if (errorMessage.includes('INVALID_CATEGORY')) {
+        showNotification('error', 'Please select a valid category');
+      } else {
+        showNotification('error', errorMessage);
+      }
     }
   };
 
-  const handleViewDetails = (product: any) => {
-    setSelectedProduct(product);
-    setDetailModalVisible(true);
+  const handleViewDetails = async (product: Product) => {
+    try {
+      // Fetch full product details
+      const response = await adminProductService.getProductById(product.id);
+      if (response.success) {
+        setSelectedProduct(response.data);
+        setDetailModalVisible(true);
+      } else {
+        showNotification('error', 'Failed to fetch product details');
+      }
+    } catch (error) {
+      console.error('Error fetching product details:', error);
+      showNotification('error', 'Failed to fetch product details');
+    }
   };
 
   const handleImageUpload = (info: any) => {
@@ -166,7 +274,7 @@ const ProductsManagement: React.FC = () => {
     // Limit to 5 images
     newFileList = newFileList.slice(-5);
     
-    // Add mock URL for demo
+    // Update file status and add preview URL
     newFileList = newFileList.map(file => {
       if (file.response) {
         file.url = file.response.url;
@@ -180,44 +288,60 @@ const ProductsManagement: React.FC = () => {
   };
 
   const handleExport = () => {
-    // Mock export functionality
-    const csvContent = products.map(product => ({
-      ID: product.id,
-      Name: product.name,
-      Category: product.category,
-      Price: product.price,
-      Stock: product.stock,
-      Status: product.status
-    }));
-    
-    const csvString = [
-      Object.keys(csvContent[0]).join(','),
-      ...csvContent.map(row => Object.values(row).join(','))
-    ].join('\n');
-    
-    const blob = new Blob([csvString], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'products.csv';
-    a.click();
-    window.URL.revokeObjectURL(url);
-    
-    showNotification('success', 'Products exported successfully');
+    try {
+      const csvContent = products.map(product => ({
+        ID: product.id,
+        Name: product.name,
+        Description: product.description,
+        Price: product.price,
+        Category: categories.find(cat => cat.id === product.categoryId)?.name || 'Unknown',
+        'Image Count': product.imageUrls?.length || 0,
+        'Created At': product.createdAt,
+        'Updated At': product.updatedAt
+      }));
+      
+      const csvString = [
+        Object.keys(csvContent[0]).join(','),
+        ...csvContent.map(row => Object.values(row).map(val => 
+          typeof val === 'string' && val.includes(',') ? `"${val}"` : val
+        ).join(','))
+      ].join('\n');
+      
+      const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `products_export_${new Date().toISOString().split('T')[0]}.csv`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+      
+      showNotification('success', 'Products exported successfully');
+    } catch (error) {
+      console.error('Error exporting products:', error);
+      showNotification('error', 'Failed to export products');
+    }
+  };
+
+  const getCategoryName = (categoryId?: number) => {
+    if (!categoryId) return 'No Category';
+    const category = categories.find(cat => cat.id === categoryId);
+    return category ? category.name : 'Unknown';
   };
 
   const columns = [
     {
       title: 'Image',
-      dataIndex: 'images',
-      key: 'images',
-      render: (images: string[]) => (
+      dataIndex: 'imageUrls',
+      key: 'imageUrls',
+      width: 80,
+      render: (imageUrls: string[]) => (
         <Image
           width={60}
           height={60}
-          src={images?.[0] || 'https://via.placeholder.com/60x60'}
+          src={imageUrls?.[0] || 'https://via.placeholder.com/60x60?text=No+Image'}
           alt="Product"
           className="object-cover rounded"
+          fallback="https://via.placeholder.com/60x60?text=No+Image"
         />
       ),
     },
@@ -226,50 +350,45 @@ const ProductsManagement: React.FC = () => {
       dataIndex: 'name',
       key: 'name',
       sorter: true,
+      ellipsis: true,
     },
     {
       title: 'Category',
-      dataIndex: 'category',
-      key: 'category',
-      render: (category: string) => <Tag color="blue">{category}</Tag>,
+      dataIndex: 'categoryId',
+      key: 'categoryId',
+      render: (categoryId: number) => (
+        <Tag color="blue">{getCategoryName(categoryId)}</Tag>
+      ),
     },
     {
       title: 'Price',
       dataIndex: 'price',
       key: 'price',
-      render: (price: number) => `$${price}`,
+      render: (price: number) => `$${price?.toLocaleString() || 0}`,
       sorter: true,
+      width: 100,
     },
     {
-      title: 'Stock',
-      dataIndex: 'stock',
-      key: 'stock',
-      render: (stock: number) => (
-        <Tag color={stock > 10 ? 'green' : stock > 0 ? 'orange' : 'red'}>
-          {stock}
-        </Tag>
+      title: 'Images',
+      dataIndex: 'imageUrls',
+      key: 'imageCount',
+      render: (imageUrls: string[]) => (
+        <Tag color="green">{imageUrls?.length || 0} images</Tag>
       ),
-    },
-    {
-      title: 'Status',
-      dataIndex: 'status',
-      key: 'status',
-      render: (status: string) => (
-        <Tag color={status === 'active' ? 'green' : 'default'}>
-          {status.toUpperCase()}
-        </Tag>
-      ),
+      width: 100,
     },
     {
       title: 'Created',
       dataIndex: 'createdAt',
       key: 'createdAt',
       render: (date: string) => new Date(date).toLocaleDateString(),
+      width: 120,
     },
     {
       title: 'Actions',
       key: 'actions',
-      render: (_, record: any) => (
+      width: 200,
+      render: (_, record: Product) => (
         <Space>
           <Button 
             type="primary" 
@@ -309,7 +428,7 @@ const ProductsManagement: React.FC = () => {
 
   const rowSelection = {
     selectedRowKeys,
-    onChange: (keys: React.Key[]) => setSelectedRowKeys(keys as string[]),
+    onChange: (keys: React.Key[]) => setSelectedRowKeys(keys),
   };
 
   return (
@@ -319,6 +438,13 @@ const ProductsManagement: React.FC = () => {
           <h2 className="text-2xl font-bold text-gray-900">Products Management</h2>
           <Space>
             <Button
+              icon={<ReloadOutlined />}
+              onClick={fetchProducts}
+              loading={loading}
+            >
+              Refresh
+            </Button>
+            <Button
               icon={<ImportOutlined />}
               onClick={() => showNotification('info', 'Import functionality coming soon')}
             >
@@ -327,6 +453,7 @@ const ProductsManagement: React.FC = () => {
             <Button
               icon={<ExportOutlined />}
               onClick={handleExport}
+              disabled={products.length === 0}
             >
               Export
             </Button>
@@ -348,46 +475,44 @@ const ProductsManagement: React.FC = () => {
             onSearch={handleSearch}
             style={{ width: 300 }}
             prefix={<SearchOutlined />}
+            loading={loading}
           />
           <Select
             placeholder="Filter by category"
-            style={{ width: 150 }}
+            style={{ width: 200 }}
             value={categoryFilter}
             onChange={setCategoryFilter}
+            loading={categoriesLoading}
           >
             <Option value="all">All Categories</Option>
             {categories.map(category => (
-              <Option key={category} value={category}>{category}</Option>
+              <Option key={category.id} value={category.id}>
+                {category.name}
+              </Option>
             ))}
-          </Select>
-          <Select
-            placeholder="Filter by status"
-            style={{ width: 150 }}
-            value={statusFilter}
-            onChange={setStatusFilter}
-          >
-            <Option value="all">All Status</Option>
-            <Option value="active">Active</Option>
-            <Option value="inactive">Inactive</Option>
           </Select>
         </div>
 
         {selectedRowKeys.length > 0 && (
-          <div className="mb-4">
-            <Space>
-              <span>{selectedRowKeys.length} selected</span>
-              <Popconfirm
-                title={`Are you sure you want to delete ${selectedRowKeys.length} products?`}
-                onConfirm={handleBulkDelete}
-                okText="Yes"
-                cancelText="No"
-              >
-                <Button danger icon={<DeleteOutlined />}>
-                  Bulk Delete
-                </Button>
-              </Popconfirm>
-            </Space>
-          </div>
+          <Alert
+            message={
+              <Space>
+                <span>{selectedRowKeys.length} selected</span>
+                <Popconfirm
+                  title={`Are you sure you want to delete ${selectedRowKeys.length} products?`}
+                  onConfirm={handleBulkDelete}
+                  okText="Yes"
+                  cancelText="No"
+                >
+                  <Button danger icon={<DeleteOutlined />} size="small">
+                    Bulk Delete
+                  </Button>
+                </Popconfirm>
+              </Space>
+            }
+            type="info"
+            className="mb-4"
+          />
         )}
 
         <Table
@@ -402,8 +527,11 @@ const ProductsManagement: React.FC = () => {
             total: pagination.total,
             showSizeChanger: true,
             showQuickJumper: true,
-            showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} products`,
-            onChange: (page, size) => setPagination(prev => ({ ...prev, current: page, pageSize: size })),
+            showTotal: (total, range) => 
+              `${range[0]}-${range[1]} of ${total} products`,
+            onChange: (page, size) => 
+              setPagination(prev => ({ ...prev, current: page, pageSize: size })),
+            pageSizeOptions: ['10', '20', '50', '100'],
           }}
           scroll={{ x: 1200 }}
         />
@@ -416,32 +544,41 @@ const ProductsManagement: React.FC = () => {
         onCancel={() => setModalVisible(false)}
         footer={null}
         width={800}
+        destroyOnClose
       >
         <Form
           form={form}
           layout="vertical"
           onFinish={handleSubmit}
-          initialValues={{ status: 'active', stock: 0 }}
         >
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item
                 name="name"
                 label="Product Name"
-                rules={[{ required: true, message: 'Please input the product name!' }]}
+                rules={[
+                  { required: true, message: 'Please input the product name!' },
+                  { min: 2, message: 'Product name must be at least 2 characters' },
+                  { max: 100, message: 'Product name must be less than 100 characters' }
+                ]}
               >
                 <Input placeholder="Enter product name" />
               </Form.Item>
             </Col>
             <Col span={12}>
               <Form.Item
-                name="category"
+                name="categoryId"
                 label="Category"
                 rules={[{ required: true, message: 'Please select a category!' }]}
               >
-                <Select placeholder="Select category">
+                <Select 
+                  placeholder="Select category"
+                  loading={categoriesLoading}
+                >
                   {categories.map(category => (
-                    <Option key={category} value={category}>{category}</Option>
+                    <Option key={category.id} value={category.id}>
+                      {category.name}
+                    </Option>
                   ))}
                 </Select>
               </Form.Item>
@@ -451,92 +588,46 @@ const ProductsManagement: React.FC = () => {
           <Form.Item
             name="description"
             label="Description"
-            rules={[{ required: true, message: 'Please input the description!' }]}
+            rules={[
+              { required: true, message: 'Please input the description!' },
+              { min: 10, message: 'Description must be at least 10 characters' },
+              { max: 1000, message: 'Description must be less than 1000 characters' }
+            ]}
           >
-            <TextArea rows={4} placeholder="Enter product description" />
+            <TextArea 
+              rows={4} 
+              placeholder="Enter product description" 
+              showCount
+              maxLength={1000}
+            />
           </Form.Item>
 
-          <Row gutter={16}>
-            <Col span={8}>
-              <Form.Item
-                name="price"
-                label="Price ($)"
-                rules={[{ required: true, message: 'Please input the price!' }]}
-              >
-                <InputNumber
-                  min={0}
-                  step={0.01}
-                  placeholder="0.00"
-                  style={{ width: '100%' }}
-                />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item
-                name="stock"
-                label="Stock Quantity"
-                rules={[{ required: true, message: 'Please input the stock quantity!' }]}
-              >
-                <InputNumber
-                  min={0}
-                  placeholder="0"
-                  style={{ width: '100%' }}
-                />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item
-                name="status"
-                label="Status"
-                rules={[{ required: true, message: 'Please select a status!' }]}
-              >
-                <Select placeholder="Select status">
-                  <Option value="active">Active</Option>
-                  <Option value="inactive">Inactive</Option>
-                </Select>
-              </Form.Item>
-            </Col>
-          </Row>
+          <Form.Item
+            name="price"
+            label="Price ($)"
+            rules={[
+              { required: true, message: 'Please input the price!' },
+              { type: 'number', min: 0.01, message: 'Price must be greater than 0' }
+            ]}
+          >
+            <InputNumber
+              min={0.01}
+              step={0.01}
+              placeholder="0.00"
+              style={{ width: '100%' }}
+              formatter={value => `$ ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+              parser={value => value!.replace(/\$\s?|(,*)/g, '')}
+            />
+          </Form.Item>
 
-          <Divider>Product Attributes</Divider>
-
-          <Row gutter={16}>
-            <Col span={8}>
-              <Form.Item name="color" label="Color">
-                <Select placeholder="Select color">
-                  {colors.map(color => (
-                    <Option key={color} value={color}>{color}</Option>
-                  ))}
-                </Select>
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item name="material" label="Material">
-                <Select placeholder="Select material">
-                  {materials.map(material => (
-                    <Option key={material} value={material}>{material}</Option>
-                  ))}
-                </Select>
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item name="size" label="Size">
-                <Select placeholder="Select size">
-                  {sizes.map(size => (
-                    <Option key={size} value={size}>{size}</Option>
-                  ))}
-                </Select>
-              </Form.Item>
-            </Col>
-          </Row>
-
-          <Form.Item label="Product Images">
+          <Form.Item label="Product Images" help="Maximum 5 images allowed">
             <Upload
               listType="picture-card"
               fileList={fileList}
               onChange={handleImageUpload}
-              beforeUpload={() => false}
+              beforeUpload={() => false} // Prevent auto upload
               maxCount={5}
+              accept="image/*"
             >
               {fileList.length >= 5 ? null : (
                 <div>
@@ -552,7 +643,7 @@ const ProductsManagement: React.FC = () => {
               Cancel
             </Button>
             <Button type="primary" htmlType="submit">
-              {editingProduct ? 'Update' : 'Create'}
+              {editingProduct ? 'Update Product' : 'Create Product'}
             </Button>
           </div>
         </Form>
@@ -574,55 +665,50 @@ const ProductsManagement: React.FC = () => {
           <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                {selectedProduct.images && selectedProduct.images.length > 0 && (
+                {selectedProduct.imageUrls && selectedProduct.imageUrls.length > 0 ? (
                   <Image.PreviewGroup>
                     <div className="grid grid-cols-2 gap-2">
-                      {selectedProduct.images.map((image: string, index: number) => (
+                      {selectedProduct.imageUrls.map((image: string, index: number) => (
                         <Image
                           key={index}
                           width={100}
                           height={100}
                           src={image}
-                          alt={`Product ${index + 1}`}
+                          alt={`${selectedProduct.name} ${index + 1}`}
                           className="object-cover rounded"
+                          fallback="https://via.placeholder.com/100x100?text=No+Image"
                         />
                       ))}
                     </div>
                   </Image.PreviewGroup>
+                ) : (
+                  <div className="text-center text-gray-500">
+                    No images available
+                  </div>
                 )}
               </div>
               <div>
                 <h3 className="text-lg font-semibold mb-2">{selectedProduct.name}</h3>
-                <p className="text-gray-600 mb-2">{selectedProduct.description}</p>
+                <p className="text-gray-600 mb-4">{selectedProduct.description}</p>
                 <div className="space-y-2">
-                  <div><strong>Category:</strong> {selectedProduct.category}</div>
-                  <div><strong>Price:</strong> ${selectedProduct.price}</div>
-                  <div><strong>Stock:</strong> {selectedProduct.stock}</div>
-                  <div><strong>Status:</strong> 
-                    <Tag color={selectedProduct.status === 'active' ? 'green' : 'default'} className="ml-2">
-                      {selectedProduct.status.toUpperCase()}
-                    </Tag>
+                  <div>
+                    <strong>Category:</strong> {getCategoryName(selectedProduct.categoryId)}
+                  </div>
+                  <div>
+                    <strong>Price:</strong> ${selectedProduct.price?.toLocaleString()}
+                  </div>
+                  <div>
+                    <strong>Images:</strong> {selectedProduct.imageUrls?.length || 0} images
+                  </div>
+                  <div>
+                    <strong>Created:</strong> {new Date(selectedProduct.createdAt).toLocaleString()}
+                  </div>
+                  <div>
+                    <strong>Updated:</strong> {new Date(selectedProduct.updatedAt).toLocaleString()}
                   </div>
                 </div>
               </div>
             </div>
-            
-            {selectedProduct.attributes && (
-              <div>
-                <h4 className="font-semibold mb-2">Attributes:</h4>
-                <div className="grid grid-cols-3 gap-2">
-                  {selectedProduct.attributes.color && (
-                    <div><strong>Color:</strong> {selectedProduct.attributes.color}</div>
-                  )}
-                  {selectedProduct.attributes.material && (
-                    <div><strong>Material:</strong> {selectedProduct.attributes.material}</div>
-                  )}
-                  {selectedProduct.attributes.size && (
-                    <div><strong>Size:</strong> {selectedProduct.attributes.size}</div>
-                  )}
-                </div>
-              </div>
-            )}
           </div>
         )}
       </Modal>

@@ -24,7 +24,7 @@ const CategoriesManagement: React.FC = () => {
   const [modalVisible, setModalVisible] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [searchText, setSearchText] = useState('');
-  const [pagination, setPagination] = useState({ current: 1, pageSize: 3, total: 0 });
+  const [pagination, setPagination] = useState({ current: 1, pageSize: 5, total: 0 });
   const [form] = Form.useForm();
   const { showNotification } = useNotification();
 
@@ -36,7 +36,7 @@ const CategoriesManagement: React.FC = () => {
     setLoading(true);
     try {
       const params: CategoryListParams = {
-        page: pagination.current,
+        page: pagination.current - 1,
         size: pagination.pageSize,
         searchString: searchText || undefined,
       };
