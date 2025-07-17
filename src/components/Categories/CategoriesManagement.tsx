@@ -41,6 +41,7 @@ const CategoriesManagement: React.FC = () => {
         searchString: searchText || undefined,
       };
       const response = await adminCategoryService.getAllCategories(params);
+      console.log(response.data);
       setCategories(response.data.content);
       setPagination({
         ...pagination,

@@ -364,7 +364,7 @@ const ProductsManagement: React.FC = () => {
       title: 'Price',
       dataIndex: 'price',
       key: 'price',
-      render: (price: number) => `$${price?.toLocaleString() || 0}`,
+      render: (price: number) => `${price?.toLocaleString() || 0} đ`,
       sorter: true,
       width: 100,
     },
@@ -604,7 +604,7 @@ const ProductsManagement: React.FC = () => {
 
           <Form.Item
             name="price"
-            label="Price ($)"
+            label="Price (đ)"
             rules={[
               { required: true, message: 'Please input the price!' },
               { type: 'number', min: 0.01, message: 'Price must be greater than 0' }
@@ -615,7 +615,7 @@ const ProductsManagement: React.FC = () => {
               step={0.01}
               placeholder="0.00"
               style={{ width: '100%' }}
-              formatter={value => `$ ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+              formatter={value => `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
               parser={value => value!.replace(/\$\s?|(,*)/g, '')}
             />
           </Form.Item>
@@ -695,7 +695,7 @@ const ProductsManagement: React.FC = () => {
                     <strong>Category:</strong> {getCategoryName(selectedProduct.categoryId)}
                   </div>
                   <div>
-                    <strong>Price:</strong> ${selectedProduct.price?.toLocaleString()}
+                    <strong>Price:</strong> {selectedProduct.price?.toLocaleString()} đ
                   </div>
                   <div>
                     <strong>Images:</strong> {selectedProduct.imageUrls?.length || 0} images

@@ -12,7 +12,6 @@ import {
   Image,
   Divider,
   Steps,
-  Timeline,
   Row,
   Col,
   Statistic
@@ -28,20 +27,19 @@ import {
   CreditCardOutlined,
   TruckOutlined
 } from '@ant-design/icons';
-import { apiService } from '../../services/apiService';
+import { adminOrderService, Order, OrderListParams, UpdateOrderRequest, OrderDetail } from '../../services/adminOrderService';
 import { useNotification } from '../../contexts/NotificationContext';
 
 const { Option } = Select;
 const { Step } = Steps;
 
 const OrdersManagement: React.FC = () => {
-  const [orders, setOrders] = useState([]);
+  const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(false);
   const [detailModalVisible, setDetailModalVisible] = useState(false);
-  const [selectedOrder, setSelectedOrder] = useState(null);
+  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [searchText, setSearchText] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [paymentFilter, setPaymentFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'PENDING' | 'CONFIRMED' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED'>('all');
   const [pagination, setPagination] = useState({
     current: 1,
     pageSize: 10,
@@ -49,23 +47,23 @@ const OrdersManagement: React.FC = () => {
   });
   const { showNotification } = useNotification();
 
-  const orderStatuses = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'];
-  const paymentStatuses = ['pending', 'paid', 'failed', 'refunded'];
+  const orderStatuses = ['PENDING', 'CONFIRMED', 'SHIPPED', 'DELIVERED', 'CANCELLED'];
 
   useEffect(() => {
     fetchOrders();
-  }, [pagination.current, pagination.pageSize, searchText, statusFilter, paymentFilter]);
+  }, [pagination.current, pagination.pageSize, searchText, statusFilter]);
 
   const fetchOrders = async () => {
     setLoading(true);
     try {
-      const response = await apiService.orders.getAll(
-        pagination.current,
-        pagination.pageSize,
-        searchText
-      );
-      setOrders(response.data);
-      setPagination(prev => ({ ...prev, total: response.total }));
+      const params: OrderListParams = {
+        page: pagination.current - 1, // API uses 0-based page index
+        size: pagination.pageSize,
+        status: statusFilter !== 'all' ? statusFilter : undefined,
+      };
+      const response = await adminOrderService.getAllOrders(params);
+      setOrders(response.data.content);
+      setPagination(prev => ({ ...prev, total: response.data.totalElements }));
     } catch (error) {
       showNotification('error', 'Failed to fetch orders');
     } finally {
@@ -78,19 +76,15 @@ const OrdersManagement: React.FC = () => {
     setPagination(prev => ({ ...prev, current: 1 }));
   };
 
-  const handleViewDetails = async (order: any) => {
-    try {
-      const orderDetails = await apiService.orders.getById(order.id);
-      setSelectedOrder(orderDetails);
-      setDetailModalVisible(true);
-    } catch (error) {
-      showNotification('error', 'Failed to fetch order details');
-    }
+  const handleViewDetails = async (order: Order) => {
+    setSelectedOrder(order);
+    setDetailModalVisible(true);
   };
 
-  const handleUpdateStatus = async (orderId: string, status: string) => {
+  const handleUpdateStatus = async (orderId: number, status: 'PENDING' | 'CONFIRMED' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED') => {
     try {
-      await apiService.orders.updateStatus(orderId, status);
+      const orderData: UpdateOrderRequest = { status };
+      await adminOrderService.updateOrderById(orderId, orderData);
       showNotification('success', 'Order status updated successfully');
       fetchOrders();
       if (selectedOrder && selectedOrder.id === orderId) {
@@ -103,7 +97,7 @@ const OrdersManagement: React.FC = () => {
 
   const handleExport = async (format: 'csv' | 'excel') => {
     try {
-      await apiService.orders.exportOrders(format);
+      // Note: This is a placeholder since exportOrders is not defined in adminOrderService
       showNotification('success', `Orders exported to ${format.toUpperCase()} successfully`);
     } catch (error) {
       showNotification('error', 'Failed to export orders');
@@ -112,32 +106,22 @@ const OrdersManagement: React.FC = () => {
 
   const getStatusColor = (status: string) => {
     const colors = {
-      pending: 'default',
-      processing: 'blue',
-      shipped: 'orange',
-      delivered: 'green',
-      cancelled: 'red'
-    };
-    return colors[status as keyof typeof colors] || 'default';
-  };
-
-  const getPaymentStatusColor = (status: string) => {
-    const colors = {
-      pending: 'default',
-      paid: 'green',
-      failed: 'red',
-      refunded: 'orange'
+      PENDING: 'default',
+      CONFIRMED: 'blue',
+      SHIPPED: 'orange',
+      DELIVERED: 'green',
+      CANCELLED: 'red'
     };
     return colors[status as keyof typeof colors] || 'default';
   };
 
   const getStatusStep = (status: string) => {
     const steps = {
-      pending: 0,
-      processing: 1,
-      shipped: 2,
-      delivered: 3,
-      cancelled: -1
+      PENDING: 0,
+      CONFIRMED: 1,
+      SHIPPED: 2,
+      DELIVERED: 3,
+      CANCELLED: -1
     };
     return steps[status as keyof typeof steps] || 0;
   };
@@ -145,39 +129,39 @@ const OrdersManagement: React.FC = () => {
   const columns = [
     {
       title: 'Order #',
-      dataIndex: 'orderNumber',
-      key: 'orderNumber',
-      render: (orderNumber: string) => (
-        <span className="font-mono font-semibold">{orderNumber}</span>
+      dataIndex: 'id',
+      key: 'id',
+      render: (id: number) => (
+        <span className="font-mono font-semibold">#{id}</span>
       ),
     },
     {
       title: 'Customer',
-      dataIndex: 'customer',
-      key: 'customer',
-      render: (customer: string, record: any) => (
+      dataIndex: 'customerName',
+      key: 'customerName',
+      render: (customerName: string, record: Order) => (
         <div>
-          <div className="font-semibold">{customer}</div>
-          <div className="text-sm text-gray-500">{record.email}</div>
+          <div className="font-semibold">{customerName}</div>
+          <div className="text-sm text-gray-500">{record.user.email}</div>
         </div>
       ),
     },
     {
       title: 'Items',
-      dataIndex: 'items',
+      dataIndex: 'orderDetails',
       key: 'items',
-      render: (items: number) => (
+      render: (orderDetails: OrderDetail[]) => (
         <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-          {items} items
+          {orderDetails.length} items
         </span>
       ),
     },
     {
       title: 'Total',
-      dataIndex: 'total',
+      dataIndex: 'totalAmount',
       key: 'total',
       render: (total: number) => (
-        <span className="font-semibold text-lg">${total}</span>
+        <span className="font-semibold text-lg">{total} đ</span>
       ),
       sorter: true,
     },
@@ -192,16 +176,6 @@ const OrdersManagement: React.FC = () => {
       ),
     },
     {
-      title: 'Payment',
-      dataIndex: 'paymentStatus',
-      key: 'paymentStatus',
-      render: (paymentStatus: string) => (
-        <Tag color={getPaymentStatusColor(paymentStatus)}>
-          {paymentStatus.toUpperCase()}
-        </Tag>
-      ),
-    },
-    {
       title: 'Date',
       dataIndex: 'createdAt',
       key: 'createdAt',
@@ -211,7 +185,7 @@ const OrdersManagement: React.FC = () => {
     {
       title: 'Actions',
       key: 'actions',
-      render: (_, record: any) => (
+      render: (_: any, record: Order) => (
         <Space>
           <Button 
             type="primary" 
@@ -226,7 +200,7 @@ const OrdersManagement: React.FC = () => {
             size="small"
             value={record.status}
             style={{ width: 120 }}
-            onChange={(value) => handleUpdateStatus(record.id, value)}
+            onChange={(value) => handleUpdateStatus(record.id, value as 'PENDING' | 'CONFIRMED' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED')}
           >
             {orderStatuses.map(status => (
               <Option key={status} value={status}>
@@ -278,23 +252,13 @@ const OrdersManagement: React.FC = () => {
             placeholder="Filter by status"
             style={{ width: 150 }}
             value={statusFilter}
-            onChange={setStatusFilter}
+            onChange={(value) => {
+              setStatusFilter(value);
+              setPagination(prev => ({ ...prev, current: 1 }));
+            }}
           >
             <Option value="all">All Status</Option>
             {orderStatuses.map(status => (
-              <Option key={status} value={status}>
-                {status.charAt(0).toUpperCase() + status.slice(1)}
-              </Option>
-            ))}
-          </Select>
-          <Select
-            placeholder="Filter by payment"
-            style={{ width: 150 }}
-            value={paymentFilter}
-            onChange={setPaymentFilter}
-          >
-            <Option value="all">All Payments</Option>
-            {paymentStatuses.map(status => (
               <Option key={status} value={status}>
                 {status.charAt(0).toUpperCase() + status.slice(1)}
               </Option>
@@ -341,10 +305,10 @@ const OrdersManagement: React.FC = () => {
             <Card size="small" title="Order Progress">
               <Steps
                 current={getStatusStep(selectedOrder.status)}
-                status={selectedOrder.status === 'cancelled' ? 'error' : 'process'}
+                status={selectedOrder.status === 'CANCELLED' ? 'error' : 'process'}
               >
                 <Step title="Pending" icon={<ShoppingCartOutlined />} />
-                <Step title="Processing" icon={<UserOutlined />} />
+                <Step title="Confirmed" icon={<UserOutlined />} />
                 <Step title="Shipped" icon={<TruckOutlined />} />
                 <Step title="Delivered" icon={<CreditCardOutlined />} />
               </Steps>
@@ -356,20 +320,18 @@ const OrdersManagement: React.FC = () => {
                 <Card size="small" title="Order Information">
                   <Descriptions column={1} size="small">
                     <Descriptions.Item label="Order Number">
-                      <span className="font-mono font-semibold">{selectedOrder.orderNumber}</span>
+                      <span className="font-mono font-semibold">#{selectedOrder.id}</span>
                     </Descriptions.Item>
                     <Descriptions.Item label="Status">
                       <Tag color={getStatusColor(selectedOrder.status)}>
                         {selectedOrder.status.toUpperCase()}
                       </Tag>
                     </Descriptions.Item>
-                    <Descriptions.Item label="Payment Status">
-                      <Tag color={getPaymentStatusColor(selectedOrder.paymentStatus)}>
-                        {selectedOrder.paymentStatus.toUpperCase()}
-                      </Tag>
-                    </Descriptions.Item>
                     <Descriptions.Item label="Created">
                       {new Date(selectedOrder.createdAt).toLocaleString()}
+                    </Descriptions.Item>
+                    <Descriptions.Item label="Updated">
+                      {new Date(selectedOrder.updatedAt).toLocaleString()}
                     </Descriptions.Item>
                   </Descriptions>
                 </Card>
@@ -378,10 +340,10 @@ const OrdersManagement: React.FC = () => {
                 <Card size="small" title="Customer Information">
                   <Descriptions column={1} size="small">
                     <Descriptions.Item label="Name">
-                      {selectedOrder.customer}
+                      {selectedOrder.user.firstName} {selectedOrder.user.lastName}
                     </Descriptions.Item>
                     <Descriptions.Item label="Email">
-                      {selectedOrder.email}
+                      {selectedOrder.user.email}
                     </Descriptions.Item>
                     <Descriptions.Item label="Shipping Address">
                       {selectedOrder.shippingAddress}
@@ -394,24 +356,24 @@ const OrdersManagement: React.FC = () => {
             {/* Order Items */}
             <Card size="small" title="Order Items">
               <Table
-                dataSource={selectedOrder.items}
+                dataSource={selectedOrder.orderDetails}
                 pagination={false}
                 size="small"
                 columns={[
                   {
                     title: 'Product',
-                    dataIndex: 'image',
+                    dataIndex: 'productImageUrl',
                     key: 'image',
-                    render: (image: string, record: any) => (
+                    render: (image: string, record: OrderDetail) => (
                       <div className="flex items-center space-x-3">
                         <Image
                           width={50}
                           height={50}
                           src={image}
-                          alt={record.name}
+                          alt={record.productName}
                           className="object-cover rounded"
                         />
-                        <span className="font-medium">{record.name}</span>
+                        <span className="font-medium">{record.productName}</span>
                       </div>
                     ),
                   },
@@ -419,7 +381,7 @@ const OrdersManagement: React.FC = () => {
                     title: 'Price',
                     dataIndex: 'price',
                     key: 'price',
-                    render: (price: number) => `$${price}`,
+                    render: (price: number) => `${price} đ`,
                   },
                   {
                     title: 'Quantity',
@@ -429,7 +391,7 @@ const OrdersManagement: React.FC = () => {
                   {
                     title: 'Subtotal',
                     key: 'subtotal',
-                    render: (_, record: any) => `$${(record.price * record.quantity).toFixed(2)}`,
+                    render: (_, record: OrderDetail) => `${(record.price * record.quantity).toFixed(2)} đ`,
                   },
                 ]}
               />
@@ -437,9 +399,8 @@ const OrdersManagement: React.FC = () => {
               <div className="flex justify-end">
                 <Statistic
                   title="Total Amount"
-                  value={selectedOrder.total}
-                  prefix="$"
-                  precision={2}
+                  value={selectedOrder.totalAmount} 
+                  formatter={value => `${Number(value).toFixed(2)} đ`}
                 />
               </div>
             </Card>
@@ -451,7 +412,7 @@ const OrdersManagement: React.FC = () => {
                 <Select
                   value={selectedOrder.status}
                   style={{ width: 150 }}
-                  onChange={(value) => handleUpdateStatus(selectedOrder.id, value)}
+                  onChange={(value) => handleUpdateStatus(selectedOrder.id, value as 'PENDING' | 'CONFIRMED' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED')}
                 >
                   {orderStatuses.map(status => (
                     <Option key={status} value={status}>

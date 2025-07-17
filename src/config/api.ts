@@ -13,7 +13,10 @@ export const API_CONFIG = {
       CATEGORIES: '/categories',
       CATEGORIES_TEST: '/categories/test',
       PRODUCTS: '/products',
-      PRODUCTS_TEST: '/products/test'
+      PRODUCTS_TEST: '/products/test',
+      ORDERS: '/orders/admin',
+      ORDERS_TEST: '/orders/admin/test'
+
     }
   }
 };
