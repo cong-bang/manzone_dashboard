@@ -15,7 +15,8 @@ export const API_CONFIG = {
       PRODUCTS: '/products',
       PRODUCTS_TEST: '/products/test',
       ORDERS: '/orders/admin',
-      ORDERS_TEST: '/orders/admin/test'
+      ORDERS_TEST: '/orders/admin/test',
+      ORDER_STATISTICS: '/orders/admin/statistics'
 
     }
   }

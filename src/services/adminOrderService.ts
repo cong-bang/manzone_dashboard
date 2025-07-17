@@ -87,6 +87,20 @@ export interface ApiError {
   errors?: Record<string, string>;
 }
 
+export interface OrderStatistics {
+  success: boolean;
+  message: string;
+  data: {
+    pending: number;
+    confirmed: number;
+    shipped: number;
+    delivered: number;
+    cancelled: number;
+    total: number;
+  };
+}
+
+
 // Configure axios defaults for CORS
 const configureAxios = () => {
   axios.defaults.withCredentials = false;
@@ -224,6 +238,22 @@ export const adminOrderService = {
         throw new Error(errorMessage || 'Failed to update order');
       }
       throw new Error('Network error while updating order');
+    }
+  },
+
+    getOrderStatistics: async (): Promise<ApiResponse<OrderStatistics>> => {
+    try {
+      const response = await axios.get<ApiResponse<OrderStatistics>>(
+        buildApiUrl(API_CONFIG.ENDPOINTS.ADMIN.ORDER_STATISTICS),
+        { headers: createAuthHeaders() }
+      );
+      console.log(response);
+      return response.data;
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        throw new Error(error.response?.data?.message || 'Failed to fetch statistics');
+      }
+      throw new Error('Network error while fetching statistics');
     }
   },
 

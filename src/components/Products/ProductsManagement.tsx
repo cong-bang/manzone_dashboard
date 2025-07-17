@@ -351,6 +351,7 @@ const ProductsManagement: React.FC = () => {
       key: 'name',
       sorter: true,
       ellipsis: true,
+      width: 200,
     },
     {
       title: 'Category',
@@ -359,6 +360,7 @@ const ProductsManagement: React.FC = () => {
       render: (categoryId: number) => (
         <Tag color="blue">{getCategoryName(categoryId)}</Tag>
       ),
+      width: 100,
     },
     {
       title: 'Price',
@@ -388,7 +390,7 @@ const ProductsManagement: React.FC = () => {
       title: 'Actions',
       key: 'actions',
       width: 200,
-      render: (_, record: Product) => (
+      render: (_: any, record: Product) => (
         <Space>
           <Button 
             type="primary" 

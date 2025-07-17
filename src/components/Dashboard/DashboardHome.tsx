@@ -19,6 +19,7 @@ import {
 } from "@ant-design/icons";
 import { adminUserService } from "../../services/adminUserService";
 import UserStatsDashboard from "./UserStatsDashboard";
+import { adminOrderService } from "../../services/adminOrderService";
 
 // Mock data for when API is not available
 const mockSalesTrend = [
@@ -40,6 +41,7 @@ const mockOrderStatus = [
 
 const DashboardHome = () => {
   const [stats, setStats] = useState<any>(null);
+  const [statsOrder, setStatsOrder] = useState(mockOrderStatus); // Khởi tạo với mock data
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -56,7 +58,28 @@ const DashboardHome = () => {
       }
     };
 
+    const fetchOrderStats = async () => {
+      try {
+        const response = await adminOrderService.getOrderStatistics();
+        console.log("Order Stats Response:", response.data);
+        if (response.success) {
+          const transformedData = Object.entries(response.data)
+            .map(([status, count]) => ({
+              status: status.charAt(0).toUpperCase() + status.slice(1),
+              count: count as number,
+            }))
+            .filter(item => item.status !== 'Total');
+          setStatsOrder(transformedData);
+        }
+      } catch (error) {
+        console.error("Error fetching order stats:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
     fetchStats();
+    fetchOrderStats();
   }, []);
 
   const orderColumns = [
@@ -104,7 +127,6 @@ const DashboardHome = () => {
       label: "Overview",
       children: (
         <div>
-          {/* Original Dashboard Content */}
           <Row gutter={[16, 16]} className="mb-6">
             <Col xs={24} sm={12} lg={6}>
               <Card>
@@ -150,10 +172,9 @@ const DashboardHome = () => {
             </Col>
           </Row>
 
-          {/* Charts */}
           <Row gutter={[16, 16]} className="mb-6">
             <Col xs={24} lg={12}>
-              <Card title="Sales Trend" className="h-96">
+              <Card title="Sales Trend" className="h-[400px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={stats?.salesTrend || mockSalesTrend}>
                     <CartesianGrid strokeDasharray="3 3" />
@@ -171,21 +192,26 @@ const DashboardHome = () => {
               </Card>
             </Col>
             <Col xs={24} lg={12}>
-              <Card title="Order Status" className="h-96">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={stats?.orderStatus || mockOrderStatus}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="status" />
-                    <YAxis />
-                    <Tooltip />
-                    <Bar dataKey="count" fill="#8884d8" />
-                  </BarChart>
-                </ResponsiveContainer>
+              <Card title="Order Status" className="h-[400px] min-h-[400px]">
+                {loading ? (
+                  <div style={{ textAlign: 'center', padding: '20px' }}>Loading...</div>
+                ) : (
+                  <>
+                    <ResponsiveContainer width="100%" height={350}>
+                      <BarChart data={Array.isArray(statsOrder) ? statsOrder : mockOrderStatus}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="status" />
+                        <YAxis />
+                        <Tooltip />
+                        <Bar dataKey="count" fill="#8884d8" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </>
+                )}
               </Card>
             </Col>
           </Row>
 
-          {/* Recent Orders and Quick Stats */}
           <Row gutter={[16, 16]}>
             <Col xs={24} lg={16}>
               <Card title="Recent Orders">
