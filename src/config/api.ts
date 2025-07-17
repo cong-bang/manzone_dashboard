@@ -11,7 +11,13 @@ export const API_CONFIG = {
       USERS_TEST: '/admin/users/test',
       USER_STATISTICS: '/admin/users/statistics',
       CATEGORIES: '/categories',
-      CATEGORIES_TEST: '/categories/test'
+      CATEGORIES_TEST: '/categories/test',
+      PRODUCTS: '/products',
+      PRODUCTS_TEST: '/products/test',
+      ORDERS: '/orders/admin',
+      ORDERS_TEST: '/orders/admin/test',
+      ORDER_STATISTICS: '/orders/admin/statistics'
+
     }
   }
 };
