@@ -183,6 +183,60 @@ const ChatSystem: React.FC = () => {
     }
   }, [hasMore, loadingMore, loadMoreConversations]);
 
+  // Fetch conversations with pagination
+  const fetchConversations = useCallback(async (page: number = 0, append: boolean = false) => {
+    if (page === 0) {
+      setLoading(true);
+    } else {
+      setLoadingMore(true);
+    }
+
+    try {
+      const response = await conversationService.getAllConversations({
+        page,
+        size: PAGE_SIZE,
+        sort: 'DESC'
+      });
+
+      if (response.success) {
+        const newConversations = response.data.content;
+        
+        if (append) {
+          setConversations(prev => [...prev, ...newConversations]);
+        } else {
+          setConversations(newConversations);
+        }
+        
+        setTotalElements(response.data.totalElements);
+        setHasMore(!response.data.last);
+        setCurrentPage(page);
+      }
+    } catch (error: any) {
+      console.error('Error fetching conversations:', error);
+      showNotification('error', error.message || 'Failed to fetch conversations');
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
+    }
+  }, [showNotification]);
+
+  // Load more conversations
+  const loadMoreConversations = useCallback(() => {
+    if (!loadingMore && hasMore) {
+      fetchConversations(currentPage + 1, true);
+    }
+  }, [currentPage, hasMore, loadingMore, fetchConversations]);
+
+  // Infinite scroll handler
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+    const isNearBottom = scrollHeight - scrollTop <= clientHeight + 100;
+    
+    if (isNearBottom && hasMore && !loadingMore) {
+      loadMoreConversations();
+    }
+  }, [hasMore, loadingMore, loadMoreConversations]);
+
   useEffect(() => {
     fetchConversations(0, false);
   }, [fetchConversations]);
