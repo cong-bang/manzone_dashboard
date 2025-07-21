@@ -24,10 +24,13 @@ import {
   UserOutlined,
   ClockCircleOutlined,
   FileTextOutlined,
-  ReloadOutlined
+  ReloadOutlined,
+  WifiOutlined,
+  DisconnectOutlined
 } from '@ant-design/icons';
 import { conversationService, Conversation, Message as ApiMessage } from '../../services/conversationService';
 import { useNotification } from '../../contexts/NotificationContext';
+import websocketService from '../../services/websocketService';
 
 const { TextArea } = Input;
 const { Text, Title } = Typography;
@@ -44,6 +47,7 @@ interface ChatMessage {
   fileName?: string;
   isRead: boolean;
   isFromUser: boolean;
+  isLocalMessage?: boolean; // Flag to identify locally added messages
 }
 
 const ChatSystem: React.FC = () => {
@@ -58,6 +62,7 @@ const ChatSystem: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(0);
   const [totalElements, setTotalElements] = useState(0);
   const [loadingMessages, setLoadingMessages] = useState(false);
+  const [isWebSocketConnected, setIsWebSocketConnected] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const conversationListRef = useRef<HTMLDivElement>(null);
   const { showNotification } = useNotification();
@@ -65,8 +70,18 @@ const ChatSystem: React.FC = () => {
   const PAGE_SIZE = 10;
 
   // Convert API message to chat message format
-  const convertApiMessageToChatMessage = (apiMessage: ApiMessage, conversationEmail: string): ChatMessage => {
-    const isFromUser = apiMessage.senderEmail === conversationEmail;
+  const convertApiMessageToChatMessage = (apiMessage: ApiMessage, _conversationEmail: string): ChatMessage => {
+    // Get the current admin user ID from the websocket service
+    const currentAdminId = websocketService.getCurrentUserId();
+    
+    // Check if the message is from the current admin user
+    // If currentAdminId is null (token issue), fallback to checking specific admin IDs
+    const isFromAdmin = currentAdminId 
+      ? apiMessage.senderId === currentAdminId 
+      : apiMessage.senderId === 12; // Fallback to hardcoded admin ID
+      
+    const isFromUser = !isFromAdmin;
+    
     return {
       id: apiMessage.id.toString(),
       senderId: apiMessage.senderId.toString(),
@@ -183,19 +198,173 @@ const ChatSystem: React.FC = () => {
     scrollToBottom();
   }, [messages]);
 
+  // Initialize WebSocket connection
+  useEffect(() => {
+    // Initialize WebSocket
+    const wsEndpoint = 'https://manzone.wizlab.io.vn/ws-chat';
+    
+    // Initialize WebSocket service with minimal configuration
+    const initialized = websocketService.initialize({
+      endpoint: wsEndpoint,
+      debug: false
+    });
+    
+    if (initialized) {
+      // Only try to connect if initialization was successful
+      try {
+        websocketService.connect();
+      } catch (error) {
+        console.error('Error connecting to WebSocket:', error);
+      }
+    }
+
+    // Add connection listener
+    const handleConnectionChange = (connected: boolean) => {
+      console.log('WebSocket connection state changed:', connected);
+      setIsWebSocketConnected(connected);
+      
+      if (connected) {
+        showNotification('success', 'Connected to chat server');
+        
+        // If there was a selected conversation, resubscribe to it
+        if (selectedConversation) {
+          // Re-fetch messages to ensure we have the latest
+          fetchMessages(selectedConversation.id, 0, false);
+        }
+      } else {
+        showNotification('warning', 'Disconnected from chat server');
+      }
+    };
+
+    websocketService.addConnectionListener(handleConnectionChange);
+
+    // Cleanup when component unmounts
+    return () => {
+      try {
+        websocketService.removeConnectionListener(handleConnectionChange);
+        websocketService.disconnect();
+      } catch (error) {
+        console.error('Error during cleanup:', error);
+      }
+    };
+  }, [showNotification, fetchMessages]); // Removed selectedConversation dependency to prevent reconnections when switching conversations
+
+  // Subscribe to conversation when selected
+  useEffect(() => {
+    if (!selectedConversation || !isWebSocketConnected) {
+      return;
+    }
+    
+    console.log('Subscribing to conversation:', selectedConversation.id);
+
+    // Subscribe to the selected conversation
+    const handleNewMessage = (newMsg: ApiMessage) => {
+      console.log('New WebSocket message received:', newMsg);
+      
+      try {
+        // The message from WebSocket service is already transformed to the Message format
+        // Convert API message to chat message format
+        const chatMessage = convertApiMessageToChatMessage(newMsg, selectedConversation.email);
+        
+        // Add message to state if it doesn't already exist
+        setMessages(prevMessages => {
+          // Check for duplicates by comparing the message content and timestamp
+          // or by checking if the message ID already exists
+          const isDuplicate = prevMessages.some(msg => {
+            // Check exact message ID match
+            const idMatch = msg.id === chatMessage.id;
+            
+            // Or check if there's a message with the same content that was sent recently
+            const contentMatch = msg.content === chatMessage.content &&
+                                 msg.isFromUser === chatMessage.isFromUser &&
+                                 (msg.isLocalMessage === true || chatMessage.senderEmail === 'admin@manzone.com');
+            
+            // Check if the messages are close in time
+            const timeMatch = Math.abs(new Date(msg.timestamp).getTime() - new Date(chatMessage.timestamp).getTime()) < 10000;
+            
+            const isDuplicateMsg = idMatch || (contentMatch && timeMatch);
+            
+            if (isDuplicateMsg) {
+              console.log('Duplicate message detected:', {
+                newMessage: chatMessage,
+                existingMessage: msg,
+                reason: idMatch ? 'ID match' : 'Content and time match'
+              });
+            }
+            
+            return isDuplicateMsg;
+          });
+          
+          if (!isDuplicate) {
+            console.log('Adding new message to chat:', chatMessage);
+            return [...prevMessages, chatMessage];
+          }
+          console.log('Skipping duplicate message:', chatMessage);
+          return prevMessages;
+        });
+      } catch (error) {
+        console.error('Error processing incoming message:', error);
+        // Don't crash the UI if there's a format error
+      }
+    };
+
+    try {
+      // Switch to the selected conversation instead of manually subscribing
+      websocketService.switchConversation(selectedConversation.id, handleNewMessage);
+    } catch (error) {
+      console.error('Error subscribing to conversation:', error);
+      showNotification('error', 'Failed to subscribe to conversation');
+    }
+    
+    // No need to manually unsubscribe as switchConversation handles this
+  }, [selectedConversation, isWebSocketConnected, showNotification]);
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
   const handleConversationSelect = (conversation: Conversation) => {
-    setSelectedConversation(conversation);
+    // Check if this is a different conversation than the currently selected one
+    if (selectedConversation?.id !== conversation.id) {
+      setSelectedConversation(conversation);
+      
+      // Clear current messages while loading new ones
+      setMessages([]);
+    }
   };
 
   const handleSendMessage = () => {
     if (!newMessage.trim() || !selectedConversation) return;
 
+    // Check if the conversation is marked as done
+    if (selectedConversation.done) {
+      showNotification('warning', 'Cannot send messages to a closed conversation.');
+      return;
+    }
+
+    if (isWebSocketConnected) {
+      // Send message through WebSocket with updated return type
+      const result = websocketService.sendMessage(
+        selectedConversation.id, 
+        newMessage,
+        'TEXT',
+        null,
+        selectedConversation.done // Pass done status to websocket service
+      );
+      
+      if (!result.success) {
+        showNotification('error', result.errorMessage || 'Failed to send message. Please try again.');
+        return;
+      }
+    } else {
+      showNotification('error', 'Not connected to chat server. Please wait for connection or refresh the page.');
+      return;
+    }
+
+    // Add message to UI immediately (optimistic UI update)
+    const tempId = `local_${Date.now()}`; // Create a temporary local ID
     const message: ChatMessage = {
-      id: Date.now().toString(),
+      id: tempId,
       senderId: 'admin',
       senderName: 'Support Agent',
       senderEmail: 'admin@manzone.com',
@@ -203,7 +372,8 @@ const ChatSystem: React.FC = () => {
       timestamp: new Date().toISOString(),
       type: 'text',
       isRead: false,
-      isFromUser: false
+      isFromUser: false,
+      isLocalMessage: true // Flag to identify locally added messages
     };
 
     setMessages(prev => [...prev, message]);
@@ -214,18 +384,37 @@ const ChatSystem: React.FC = () => {
     if (info.file.status === 'done') {
       message.success('File uploaded successfully');
       
+      if (!selectedConversation) return;
+      
+      const imageUrl = info.file.response?.url || '#';
+      
+      if (isWebSocketConnected) {
+        // Send image through WebSocket
+        websocketService.sendMessage(
+          selectedConversation.id,
+          `Image: ${info.file.name}`,
+          'IMAGE',
+          imageUrl
+        );
+      } else {
+        showNotification('error', 'Not connected to chat server. Please try again.');
+      }
+      
+      // Optimistic UI update
+      const tempId = `local_${Date.now()}`; // Create a temporary local ID
       const fileMessage: ChatMessage = {
-        id: Date.now().toString(),
+        id: tempId,
         senderId: 'admin',
         senderName: 'Support Agent',
         senderEmail: 'admin@manzone.com',
-        content: `File: ${info.file.name}`,
+        content: `Image: ${info.file.name}`,
         timestamp: new Date().toISOString(),
-        type: 'file',
-        fileUrl: info.file.response?.url || '#',
+        type: 'image',
+        fileUrl: imageUrl,
         fileName: info.file.name,
         isRead: false,
-        isFromUser: false
+        isFromUser: false,
+        isLocalMessage: true // Flag to identify locally added messages
       };
 
       setMessages(prev => [...prev, fileMessage]);
@@ -268,13 +457,79 @@ const ChatSystem: React.FC = () => {
     if (!selectedConversation) return;
     
     try {
-      // TODO: Implement API call to mark conversation as done
-      showNotification('success', 'Conversation marked as done');
-      // Refresh conversation list to update the status
-      fetchConversations(0, false);
+      // Use the new markConversationAsDone API
+      const response = await conversationService.markConversationAsDone(selectedConversation.id);
+
+      if (response.success) {
+        showNotification('success', 'Conversation marked as done');
+        
+        // Update selected conversation locally to reflect done status
+        setSelectedConversation(prev => {
+          if (prev) {
+            return { ...prev, done: true };
+          }
+          return prev;
+        });
+        
+        // Refresh conversation list to update the status
+        fetchConversations(0, false);
+      } else {
+        throw new Error(response.errors || 'Failed to mark conversation as done');
+      }
     } catch (error: any) {
       console.error('Error marking conversation as done:', error);
       showNotification('error', error.message || 'Failed to mark conversation as done');
+    }
+  };
+
+  // Manually reconnect WebSocket
+  const handleReconnectWebSocket = () => {
+    const wsEndpoint = 'https://manzone.wizlab.io.vn/ws-chat';
+    
+    try {
+      if (isWebSocketConnected) {
+        // Disconnect first
+        websocketService.disconnect();
+        showNotification('info', 'Disconnected from chat server');
+      } else {
+        // Completely reinitialize the WebSocket service
+        websocketService.disconnect(); // Ensure clean state even if it thinks it's disconnected
+        
+        // Initialize with fresh settings
+        const initialized = websocketService.initialize({
+          endpoint: wsEndpoint,
+          debug: false
+        });
+        
+        if (initialized) {
+          // Connect after successful initialization
+          const connected = websocketService.connect();
+          if (connected) {
+            showNotification('info', 'Connecting to chat server...');
+            
+            // Wait a bit to ensure connection is established before trying to subscribe
+            setTimeout(() => {
+              // Force refresh selected conversation to trigger resubscription via useEffect
+              if (selectedConversation) {
+                const currentConversation = {...selectedConversation};
+                setSelectedConversation(null);
+                
+                // Small delay to ensure state updates properly
+                setTimeout(() => {
+                  setSelectedConversation(currentConversation);
+                }, 300);
+              }
+            }, 500);
+          } else {
+            showNotification('error', 'Failed to connect to chat server');
+          }
+        } else {
+          showNotification('error', 'Failed to initialize WebSocket');
+        }
+      }
+    } catch (error) {
+      console.error('Error during WebSocket reconnection:', error);
+      showNotification('error', 'Failed to manage WebSocket connection');
     }
   };
 
@@ -287,13 +542,32 @@ const ChatSystem: React.FC = () => {
             {/* Sidebar Header */}
             <div className="p-6 border-b border-gray-100">
               <div className="flex items-center justify-between mb-4">
-                <Title level={4} className="mb-0 text-gray-800">Customer Support</Title>
-                <Button 
-                  icon={<ReloadOutlined />} 
-                  onClick={handleRefresh}
-                  loading={loading}
-                  size="small"
-                />
+                <div className="flex items-center">
+                  <Title level={4} className="mb-0 text-gray-800 mr-2">Customer Support</Title>
+                  {isWebSocketConnected ? (
+                    <Tag color="success" className="flex items-center cursor-pointer" onClick={handleReconnectWebSocket}>
+                      <WifiOutlined className="mr-1" /> Connected
+                    </Tag>
+                  ) : (
+                    <Tag color="error" className="flex items-center cursor-pointer" onClick={handleReconnectWebSocket}>
+                      <DisconnectOutlined className="mr-1" /> Reconnect
+                    </Tag>
+                  )}
+                </div>
+                <Space>
+                  <Button 
+                    icon={isWebSocketConnected ? <DisconnectOutlined /> : <WifiOutlined />}
+                    onClick={handleReconnectWebSocket}
+                    type={isWebSocketConnected ? "default" : "primary"}
+                    size="small"
+                  />
+                  <Button 
+                    icon={<ReloadOutlined />} 
+                    onClick={handleRefresh}
+                    loading={loading}
+                    size="small"
+                  />
+                </Space>
               </div>
               <Input
                 placeholder="Search conversations..."
@@ -410,14 +684,20 @@ const ChatSystem: React.FC = () => {
                         </div>
                       </div>
                     </div>
-                    <Button 
-                      type="primary" 
-                      icon={<CheckOutlined />}
-                      className="bg-green-500 hover:bg-green-600 border-green-500"
-                      onClick={handleMarkAsDone}
-                    >
-                      Mark as Done
-                    </Button>
+                    {selectedConversation.done ? (
+                      <Tag color="green" icon={<CheckCircleOutlined />}>
+                        Conversation Closed
+                      </Tag>
+                    ) : (
+                      <Button 
+                        type="primary" 
+                        icon={<CheckOutlined />}
+                        className="bg-green-500 hover:bg-green-600 border-green-500"
+                        onClick={handleMarkAsDone}
+                      >
+                        Mark as Done
+                      </Button>
+                    )}
                   </div>
                 </div>
 
@@ -499,46 +779,55 @@ const ChatSystem: React.FC = () => {
 
                 {/* Message Input */}
                 <div className="p-4 bg-white border-t border-gray-100">
-                  <div className="flex items-end space-x-3">
-                    <div className="flex-1">
-                      <TextArea
-                        value={newMessage}
-                        onChange={(e) => setNewMessage(e.target.value)}
-                        placeholder="Type your message..."
-                        autoSize={{ minRows: 1, maxRows: 4 }}
-                        className="resize-none rounded-lg"
-                        onPressEnter={(e) => {
-                          if (!e.shiftKey) {
-                            e.preventDefault();
-                            handleSendMessage();
-                          }
-                        }}
-                      />
+                  {selectedConversation && selectedConversation.done ? (
+                    <div className="bg-gray-100 p-3 rounded-lg text-center text-gray-600">
+                      <CheckCircleOutlined className="mr-2 text-green-500" />
+                      This conversation has been marked as done and is closed for new messages.
                     </div>
-                    <Space>
-                      <Upload
-                        showUploadList={false}
-                        onChange={handleFileUpload}
-                        beforeUpload={() => false}
-                      >
-                        <Button 
-                          icon={<PaperClipOutlined />} 
-                          size="large"
-                          className="rounded-lg"
+                  ) : (
+                    <div className="flex items-end space-x-3">
+                      <div className="flex-1">
+                        <TextArea
+                          value={newMessage}
+                          onChange={(e) => setNewMessage(e.target.value)}
+                          placeholder="Type your message..."
+                          autoSize={{ minRows: 1, maxRows: 4 }}
+                          className="resize-none rounded-lg"
+                          disabled={selectedConversation?.done}
+                          onPressEnter={(e) => {
+                            if (!e.shiftKey) {
+                              e.preventDefault();
+                              handleSendMessage();
+                            }
+                          }}
                         />
-                      </Upload>
-                      <Button
-                        type="primary"
-                        icon={<SendOutlined />}
-                        onClick={handleSendMessage}
-                        disabled={!newMessage.trim()}
-                        size="large"
-                        className="rounded-lg bg-blue-500 hover:bg-blue-600"
-                      >
-                        Send
-                      </Button>
-                    </Space>
-                  </div>
+                      </div>
+                      <Space>
+                        <Upload
+                          showUploadList={false}
+                          onChange={handleFileUpload}
+                          beforeUpload={() => false}
+                        >
+                          <Button 
+                            icon={<PaperClipOutlined />} 
+                            size="large"
+                            className="rounded-lg"
+                            disabled={selectedConversation?.done}
+                          />
+                        </Upload>
+                        <Button
+                          type="primary"
+                          icon={<SendOutlined />}
+                          onClick={handleSendMessage}
+                          disabled={!newMessage.trim() || selectedConversation?.done}
+                          size="large"
+                          className="rounded-lg bg-blue-500 hover:bg-blue-600"
+                        >
+                          Send
+                        </Button>
+                      </Space>
+                    </div>
+                  )}
                 </div>
               </>
             ) : (
