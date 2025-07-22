@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { Layout, Menu, Button, Dropdown, Avatar, Badge, Breadcrumb } from 'antd';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
+import type { MenuProps } from 'antd';
 import {
-  DashboardOutlined,
+  HomeOutlined,
   UserOutlined,
   ShoppingOutlined,
   TagsOutlined,
@@ -15,7 +16,7 @@ import {
   SettingOutlined
 } from '@ant-design/icons';
 import { useAuth } from '../../contexts/AuthContext';
-import DashboardHome from './DashboardHome';
+import Introduction from './Introduction';
 import UsersManagement from '../Users/UsersManagement';
 import ProductsManagement from '../Products/ProductsManagement';
 import CategoriesManagement from '../Categories/CategoriesManagement';
@@ -24,37 +25,39 @@ import ChatSystem from '../Chat/ChatSystem';
 
 const { Header, Sider, Content } = Layout;
 
+type MenuItem = Required<MenuProps>['items'][number];
+
 const Dashboard: React.FC = () => {
   const [collapsed, setCollapsed] = useState(false);
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
-  const menuItems = [
+  const menuItems: MenuItem[] = [
     {
       key: '/dashboard',
-      icon: <DashboardOutlined />,
-      label: 'Dashboard',
+      icon: <HomeOutlined />,
+      label: 'Trang chủ',
     },
     {
       key: '/dashboard/users',
       icon: <UserOutlined />,
-      label: 'Users',
+      label: 'Người dùng',
     },
     {
       key: '/dashboard/products',
       icon: <ShoppingOutlined />,
-      label: 'Products',
+      label: 'Sản phẩm',
     },
     {
       key: '/dashboard/categories',
       icon: <TagsOutlined />,
-      label: 'Categories',
+      label: 'Danh mục',
     },
     {
       key: '/dashboard/orders',
       icon: <OrderedListOutlined />,
-      label: 'Orders',
+      label: 'Đơn hàng',
     },
     {
       key: '/dashboard/chat',
@@ -63,8 +66,8 @@ const Dashboard: React.FC = () => {
     },
   ];
 
-  const handleMenuClick = (e: any) => {
-    navigate(e.key);
+  const handleMenuClick = (info: any) => {
+    navigate(info.key);
   };
 
   const handleLogout = () => {
@@ -72,16 +75,16 @@ const Dashboard: React.FC = () => {
     navigate('/login');
   };
 
-  const userMenuItems = [
+  const userMenuItems: MenuProps['items'] = [
     {
       key: 'profile',
       icon: <UserOutlined />,
-      label: 'Profile',
+      label: 'Hồ sơ',
     },
     {
       key: 'settings',
       icon: <SettingOutlined />,
-      label: 'Settings',
+      label: 'Cài đặt',
     },
     {
       type: 'divider',
@@ -89,24 +92,33 @@ const Dashboard: React.FC = () => {
     {
       key: 'logout',
       icon: <LogoutOutlined />,
-      label: 'Logout',
+      label: 'Đăng xuất',
       onClick: handleLogout,
     },
   ];
 
   const getBreadcrumbItems = () => {
     const pathSegments = location.pathname.split('/').filter(Boolean);
-    const breadcrumbItems = [
+    const breadcrumbItems: {title: string, href?: string}[] = [
       {
-        title: 'Dashboard',
+        title: 'Trang chủ',
         href: '/dashboard',
       },
     ];
 
     if (pathSegments.length > 1) {
       const currentPage = pathSegments[1];
+      const title = currentPage.charAt(0).toUpperCase() + currentPage.slice(1);
+      const translatedTitle = 
+        currentPage === 'users' ? 'Người dùng' :
+        currentPage === 'products' ? 'Sản phẩm' :
+        currentPage === 'categories' ? 'Danh mục' :
+        currentPage === 'orders' ? 'Đơn hàng' :
+        currentPage === 'chat' ? 'Chat' : title;
+      
       breadcrumbItems.push({
-        title: currentPage.charAt(0).toUpperCase() + currentPage.slice(1),
+        title: translatedTitle,
+        href: `/dashboard/${currentPage}`
       });
     }
 
@@ -181,7 +193,7 @@ const Dashboard: React.FC = () => {
         
         <Content className="p-6 bg-gray-50">
           <Routes>
-            <Route path="/" element={<DashboardHome />} />
+            <Route path="/" element={<Introduction />} />
             <Route path="/users" element={<UsersManagement />} />
             <Route path="/products" element={<ProductsManagement />} />
             <Route path="/categories" element={<CategoriesManagement />} />
